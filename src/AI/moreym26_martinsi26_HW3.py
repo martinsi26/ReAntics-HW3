@@ -275,16 +275,25 @@ class AIPlayer(Player):
         
         # Get home locations (Anthill + Tunnels)
         homeList = [myInv.getAnthill()] + myInv.getTunnels()
-        
+        #Get ants
+        ants = getAntList(currentState, currentState.whoseTurn)
+
         for worker in myWorkers:
             if worker.carrying:
                 # Worker has food: move towards closest home (anthill/tunnel)
-                closestHomeDist = min(approxDist(worker.coords, home.coords) for home in homeList)
+                homesByDistance = sorted(homeList, key=lambda h: approxDist(worker.coords, h.coords))
                 # Closer distance is better, invert distance
-                score += 10 / (closestHomeDist + 1)
-                score += 10  # bonus for carrying food
-                if closestHomeDist > 5:
-                    score -= 5
+                for home in homesByDistance:
+                    occupied = any(a.coords == home.coords and a is not worker for a in ants)
+                    if not occupied:
+                        closestHomeDist = approxDist(worker.coords, home.coords)
+                        score += 10 / (closestHomeDist + 1)
+                        score += 10  # bonus for carrying food
+                        if worker.coords in [home.coords for home in homeList]:
+                            score += 20  # Encourage dropping food
+                        if closestHomeDist > 5:
+                            score -= 5
+                        break
             else:
                 # Worker not carrying: move towards closest food
                 if foodList:
