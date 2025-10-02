@@ -283,11 +283,13 @@ class AIPlayer(Player):
                 # Closer distance is better, invert distance
                 score += 10 / (closestHomeDist + 1)
                 score += 10  # bonus for carrying food
+                if closestHomeDist > 5:
+                    score -= 5
             else:
                 # Worker not carrying: move towards closest food
                 if foodList:
                     closestFoodDist = min(approxDist(worker.coords, food.coords) for food in foodList)
-                    score += 5 / (closestFoodDist + 1) 
+                    score += 10 / (closestFoodDist + 1) 
 
         # Reward for delivered food
         score += 10 * myInv.foodCount
@@ -309,7 +311,7 @@ class AIPlayer(Player):
     # This agent doens't learn
     #
     def registerWin(self, hasWon):
-        #method templaste, not implemented
+        #method template, not implemented
         pass
 
 class Node:
