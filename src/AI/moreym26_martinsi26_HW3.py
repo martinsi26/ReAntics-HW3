@@ -50,7 +50,7 @@ class AIPlayer(Player):
 
         if currentState.phase == SETUP_PHASE_1:
             return [
-                (0, 0), (8, 1),  # Anthill and hive
+                (1, 1), (8, 1),  # Anthill and hive
                 #Make a Grass wall
                 (0, 3), (1, 3), (2, 3), (3, 3),  #Grass 
                 (4, 3), (5, 3), (6, 3), #Grass
@@ -91,16 +91,14 @@ class AIPlayer(Player):
     #Return: The Move to be made
     ##
     def getMove(self, currentState):
-        rootNode = Node(None, currentState, 0, self.utility(currentState), None)
+        rootNode = Node(None, currentState, 0, self.utility(currentState, currentState), None)
         best_score = -math.inf
         move_choice = None
         for node in self.expandNode(rootNode):
-            score = self.minimax(node, self.playerId)
+            score = self.minimax(node)
             if score > best_score:
                 best_score = score
                 move_choice = node.move
-        print(best_score)
-        print(move_choice)
         return move_choice
 
 
@@ -114,27 +112,28 @@ class AIPlayer(Player):
     #
     #Return: The mini-max evaluation of the move
     ##
-    def minimax(self, node, whoseTurn):
+    def minimax(self, node):
         DEPTH_LIMIT = 3
 
         if node.depth == DEPTH_LIMIT or getWinner(node.gameState) is not None:
             print(f"Random node eval: {node.evaluation}")
-            # if it is a leaf node then find utility
+            print(f"Move with node: {node.move}")
+            # Base case: if it is a leaf node then find utility
             return node.evaluation
 
-        # My move
-        if whoseTurn == self.playerId:
+        # Recurrsive Case 1: My move
+        if node.gameState.whoseTurn == self.playerId:
             best_eval = -math.inf
             for child in self.expandNode(node):
-                eval = self.minimax(child, child.gameState.whoseTurn)
+                eval = self.minimax(child)
                 best_eval = max(best_eval, eval)
             return best_eval
 
-        # Opponents move
+        # Recurrsive Case 2: Opponents move
         else:
             best_eval = math.inf
             for child in self.expandNode(node):
-                eval = self.minimax(child, child.gameState.whoseTurn)
+                eval = self.minimax(child)
                 best_eval = min(best_eval, eval)
             return best_eval
     
@@ -156,7 +155,7 @@ class AIPlayer(Player):
 
         for move in moves:
             gameState = getNextStateAdversarial(node.gameState, move)
-            childNode = Node(move, gameState, node.depth+1, self.utility(gameState), node)
+            childNode = Node(move, gameState, node.depth+1, self.utility(gameState, node.gameState), node)
             nodeList.append(childNode)
         
         return nodeList
@@ -172,20 +171,24 @@ class AIPlayer(Player):
     #
     #Return: The evaluation value for the move
     ##
-    def utility(self, currentState):
+    def utility(self, currentState, previousState):
         TARGET_WORKERS = 2
         TARGET_ARMY = {R_SOLDIER: 1, SOLDIER: 1}
 
         winner = getWinner(currentState)
 
         # Game over scoring
-        if winner == PLAYER_ONE:
+        if winner == 1:
             return math.inf
-        elif winner == PLAYER_TWO:
+        elif winner == 0:
             return -math.inf
         
-        myInv = getCurrPlayerInventory(currentState)
-        enemyInv = getEnemyInv(self, currentState)
+        if currentState.whoseTurn == 1:
+            myInv = getCurrPlayerInventory(currentState)
+            enemyInv = getEnemyInv(self, currentState)
+        else:
+            enemyInv = getCurrPlayerInventory(currentState)
+            myInv = getEnemyInv(self, currentState)
 
         score = 0
 
@@ -193,12 +196,18 @@ class AIPlayer(Player):
         score += 10 * myInv.getQueen().health
         score -= 10 * enemyInv.getQueen().health
 
+        # Queen off Anthill
+        if myInv.getQueen().coords == myInv.getAnthill().coords:
+            score -= 5
+        else:
+            score += 5
+
         # Anthill HP
         score += 5 * myInv.getAnthill().captureHealth
         score -= 5 * enemyInv.getAnthill().captureHealth
 
         # Worker incentive
-        myWorkers = getAntList(currentState, currentState.whoseTurn, (WORKER,))
+        myWorkers = getAntList(currentState, 1, (WORKER,))
         numWorkers = len(myWorkers)
         if numWorkers < TARGET_WORKERS:
             score += 5 * numWorkers
@@ -221,16 +230,17 @@ class AIPlayer(Player):
             score += 10 * myInv.foodCount
 
         # Penalize enemy army
-        enemyArmy = getAntList(currentState, 1 - currentState.whoseTurn, (WORKER, DRONE, SOLDIER, R_SOLDIER)) # All enemy ants but disregarding their queen
+        enemyArmy = getAntList(currentState, 0, (WORKER, DRONE, SOLDIER, R_SOLDIER)) # All enemy ants but disregarding their queen
         score -= 3 * len(enemyArmy)
 
         # Ranged soldier movement incentive
-        myRSoldiers = [ant for ant in getAntList(currentState, currentState.whoseTurn, (R_SOLDIER,))]
+        myRSoldiers = [ant for ant in getAntList(currentState, 1, (R_SOLDIER,))]
         score += self.rangedSoldierUtility(myRSoldiers, enemyArmy)
 
         # Worker movement incentive
-        myWorkers = getAntList(currentState, currentState.whoseTurn, (WORKER,))
-        score += self.workerUtility(myWorkers, currentState)
+        myWorkers = getAntList(currentState, 1, (WORKER,))
+        previousWorkers = getAntList(previousState, 1, (WORKER,))
+        score += self.workerUtility(myWorkers, previousWorkers, currentState, myInv)
 
         return score
 
@@ -266,9 +276,8 @@ class AIPlayer(Player):
     #
     #Return: The evaluation value for worker movement
     ##
-    def workerUtility(self, myWorkers, currentState):
+    def workerUtility(self, myWorkers, previousWorkers, currentState, myInv):
         score = 0
-        myInv = getCurrPlayerInventory(currentState)
         
         # Get food on the board
         foodList = getConstrList(currentState, pid=None, types=(FOOD,))
@@ -277,20 +286,20 @@ class AIPlayer(Player):
         homeList = [myInv.getAnthill()] + myInv.getTunnels()
         
         for worker in myWorkers:
-            if worker.carrying:
-                # Worker has food: move towards closest home (anthill/tunnel)
-                closestHomeDist = min(approxDist(worker.coords, home.coords) for home in homeList)
-                # Closer distance is better, invert distance
-                score += 10 / (closestHomeDist + 1)
-                score += 10  # bonus for carrying food
-            else:
-                # Worker not carrying: move towards closest food
-                if foodList:
-                    closestFoodDist = min(approxDist(worker.coords, food.coords) for food in foodList)
-                    score += 5 / (closestFoodDist + 1) 
+            for prevWorker in previousWorkers:
+                if prevWorker.UniqueID != worker.UniqueID:
+                    continue
 
-        # Reward for delivered food
-        score += 10 * myInv.foodCount
+                if worker.carrying or (not worker.carrying and prevWorker.carrying):
+                    # Worker has food: move towards closest home (anthill/tunnel)
+                    closestHomeDist = min(approxDist(worker.coords, home.coords) for home in homeList)
+                    # Closer distance is better, invert distance
+                    score += 10 / (closestHomeDist + 1)
+                elif not worker.carrying or (worker.carrying and not prevWorker.carrying):
+                    # Worker not carrying: move towards closest food
+                    if foodList:
+                        closestFoodDist = min(approxDist(worker.coords, food.coords) for food in foodList)
+                        score += 5 / (closestFoodDist + 1) 
         
         return score
 
