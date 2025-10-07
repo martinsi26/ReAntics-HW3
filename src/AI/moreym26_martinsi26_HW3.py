@@ -162,7 +162,7 @@ class AIPlayer(Player):
     
     def utility(self, currentState):
         #combined heuristic, lower is better
-        return -(self.foodHeuristic(currentState) + self.geh_h_attack(currentState) + self.get_h_queen(currentState))
+        return -(self.foodHeuristic(currentState) + self.geh_h_attack(currentState) + self.queenHeuristic(currentState))
     
     def foodHeuristic(self, parentState, currentState):
         #defining vars
@@ -180,34 +180,56 @@ class AIPlayer(Player):
 
         totMoves = 0
 
-        if workerList != []:
-            totMoves -= 1000
-            for worker in workerList:
-                if (worker.carrying):
-                    dist = approxDist(worker.coords, myTunnel.coords)
-                    totMoves += self.dist_to_moves(dist, WORKER)
-                    foodNeeded -= 1 # each worker will deliver the food
+        for worker in workerList:
+            if (worker.carrying):
+                dist = approxDist(worker.coords, myTunnel.coords)
+            else:
+                dist_to_food_1 = approxDist(worker.coords, food1.coords)
+                dist_to_food_2 = approxDist(worker.coords, food2.coords)
+                dist = min(dist_to_food_1, dist_to_food_2)
 
-                else:
-                    dist_to_food_1 = approxDist(worker.coords, food1.coords)
-                    dist_to_food_2 = approxDist(worker.coords, food2.coords)
-
-                    if dist_to_food_1 < dist_to_food_2:
-                        dist = dist_to_food_1
-                        dist += approxDist(food1.coords, myTunnel.coords)
-                    else:
-                        dist = dist_to_food_2
-                        dist += approxDist(food2.coords, myTunnel.coords)
-                    totMoves += self.dist_to_moves(dist, WORKER)
-                    foodNeeded -= 1 # each worker will deliver the food
+            totMoves += self.dist_to_moves(dist, WORKER)
+            foodNeeded -= 1 # each worker will deliver the food
         
-        dist_between_tunnel_food = min (approxDist(food1.coords, myTunnel.coords), approxDist(food2.coords, myTunnel.coords))
-        totMoves += 2 * foodNeeded * self.dist_to_moves(dist_between_tunnel_food, WORKER)
-            
+        if foodNeeded > 0:
+            tunnel_food_dist = min(approxDist(food1.coords, myTunnel.coords),
+                                   approxDist(food2.coords, myTunnel.coords))
+            totMoves += 2 * foodNeeded * self.dist_to_moves(tunnel_food_dist, WORKER)    
+        
         return  totMoves
     
+    def attackHeuristic(self, parentState, currentState):
+        myId = currentState.whoseTurn
+        enemyId = 1 - myId
+        myAnts = getAntList(currentState, myId)
+        enemyQueen = getAntList(currentState, enemyId, (QUEEN,))
+        
+        if not enemyQueen:
+            return 0
+        enemyQueen = enemyQueen[0]
+        
+        moves = 0
+        for ant in myAnts:
+            if ant.type in (SOLDIER, R_SOLDIER):
+                dist = approxDist(ant.coords, enemyQueen.coords)
+                moves += self.dist_to_moves(dist, ant.type)
+        
+        return moves
     
-    
+    # Check whethere the Queen is blocking the anthill
+    def queenHeuristic(self, parentState, currentState):
+        myId = currentState.whoseTurn
+        myAnthill = getConstrList(currentState, myId, (ANTHILL,))[0]
+        myTunnel = getConstrList(currentState, myId, (TUNNEL,))[0]
+        myQueen = getAntList(currentState, myId, (QUEEN,))[0]
+
+        penalty = 0
+        if myQueen.coords in (myTunnel.coords, myAnthill.coords):
+            penalty += 100 
+        return penalty + self.dist_to_moves(approxDist(myQueen.coords, (1, 2)), QUEEN)
+
+    def dist_to_moves (self, dist, ant_type):
+        return math.ceil (dist / UNIT_STATS[ant_type][MOVEMENT])
     
     ##
     #getAttack
@@ -225,128 +247,7 @@ class AIPlayer(Player):
     def registerWin(self, hasWon):
         #method template, not implemented
         pass
-    def dist_to_moves (self, dist, ant_type):
-        return math.ceil (dist / UNIT_STATS[ant_type][MOVEMENT])
     
-    def select_from_frontierNodes(self, frontierNodes, max_depth):
-        min_f_value = 10000000
-        selected_node = None
-
-        for node in frontierNodes:
-            if node['depth'] < max_depth and node['f_value'] < min_f_value:
-                selected_node = node
-
-        if selected_node == None:
-            return None
-        
-        return selected_node
-
-    def findBestNode(self, nodes):
-        #intialize vars
-        best_node = nodes[0]
-        min_value = best_node['f_value']
-        #Get best utility
-        for node in nodes:
-            if (node['f_value'] < min_value):
-                min_value = node['f_value']
-                best_node = node  
-
-        best_nodes = []
-        for node in nodes:
-            if node['f_value'] == min_value:
-                best_nodes.append(node)
-
-        best_node = best_nodes[random.randint(0,len(best_nodes) - 1)]
-
-        # Find the best movement -> from the current depth to the first depth !!! 
-        while best_node['depth'] > 2:
-            best_node = best_node['parentNode']
-
-        return best_node
-
-    def h_func(self, parentState, currentState):
-        h_food = self.foodHeuristic(parentState, currentState)
-        
-        h_attack = self.get_h_attack(parentState, currentState)
-
-        h_queen = self.get_h_queen(parentState, currentState)
-        #Add all together
-        h_final = h_food + h_attack + h_queen
-
-        return h_final
-
-
-    def get_h_attack(self, parentState, currentState):
-        myId = currentState.whoseTurn
-        myInv = currentState.inventories[myId]
-
-        enemyId = 1 - myId
-        enemyInv = currentState.inventories[enemyId]
-
-        myAntList = getAntList(currentState, myId)
-        enemyTunnel = getConstrList(currentState, enemyId, (TUNNEL,))[0]
-
-        # If enemy queen is killed
-        if getAntList(currentState, enemyId, (QUEEN,)) == []:
-            return 0
-        
-        Total_moves = 2100
-        num_r_soldier = 0
-        num_soldier = 0
-
-        for ant in myAntList:
-            if ant.type == R_SOLDIER:
-                num_r_soldier += 1
-            if ant.type == SOLDIER:
-                num_soldier += 1
-
-        if num_r_soldier != 0:
-            Total_moves = max (0, Total_moves - 500 * num_r_soldier)
-
-        enemyQueen = getAntList(currentState, enemyId, (QUEEN,))[0]
-        enemyWorkers = getAntList(currentState, enemyId, (WORKER,))
-        if enemyWorkers == []:
-            Total_moves -= 100
-
-        for ant in myAntList:
-            if ant.type == R_SOLDIER:
-                if enemyWorkers == []:
-                    dist_to_target = approxDist(ant.coords, enemyQueen.coords)
-                else:
-                    dist_to_target = approxDist(ant.coords, enemyWorkers[0].coords)
-
-                moves_to_target = self.dist_to_moves (dist_to_target, R_SOLDIER)
-                Total_moves += moves_to_target
-
-        return Total_moves
-    
-    # Check whethere the Queen is blocking the anthill
-    def get_h_queen(self, parentState, currentState):
-        myId = currentState.whoseTurn
-        myAnthill = getConstrList(currentState, myId, (ANTHILL,))[0]
-        myTunnel = getConstrList(currentState, myId, (TUNNEL,))[0]
-        myQueen = getAntList(currentState, myId, (QUEEN,))[0]
-
-        Foods = getConstrList(currentState, None, (FOOD,))
-        myFood_1, myFood_2 = None, None
-        for food in Foods:
-            if food.coords[1] <= 3:
-                if myFood_1 == None:
-                    myFood_1 = food
-                else:
-                    myFood_2 = food
-
-        Total_moves = 2
-        if  (myQueen.coords != myAnthill.coords) and (myQueen.coords != myTunnel.coords):
-            Total_moves -= 1
-        elif (myQueen.coords != myFood_1.coords) and (myQueen.coords != myFood_2.coords):
-            Total_moves -= 1
-
-        dist_to_destination = approxDist(myQueen.coords, (1,2))
-        Total_moves += self.dist_to_moves (dist_to_destination, QUEEN)
-        
-        return Total_moves
-
 class Node:
     def __init__(self, move, gameState, depth, evaluation, parent):
         self.move = move
