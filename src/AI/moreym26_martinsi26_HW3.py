@@ -287,7 +287,7 @@ class AIPlayer(Player):
                     occupied = any(a.coords == home.coords and a is not worker for a in ants)
                     if not occupied:
                         closestHomeDist = approxDist(worker.coords, home.coords)
-                        score += 10 / (closestHomeDist + 1)
+                        score += 20 / (closestHomeDist + 1)
                         score += 10  # bonus for carrying food
                         if worker.coords in [home.coords for home in homeList]:
                             score += 20  # Encourage dropping food
