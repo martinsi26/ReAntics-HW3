@@ -95,7 +95,7 @@ class AIPlayer(Player):
         best_score = -math.inf
         move_choice = None
         for node in self.expandNode(rootNode):
-            score = self.minimax(node, self.playerId)
+            score = self.minimax(node)
             if score > best_score:
                 best_score = score
                 move_choice = node.move
@@ -113,28 +113,30 @@ class AIPlayer(Player):
     #   whoseTurn - Variable indicating if this is my move or the opponents move
     #
     #Return: The mini-max evaluation of the move
-    ##
-    def minimax(self, node, whoseTurn):
+    def minimax(self, node):
         DEPTH_LIMIT = 3
 
         if node.depth == DEPTH_LIMIT or getWinner(node.gameState) is not None:
             print(f"Random node eval: {node.evaluation}")
-            # if it is a leaf node then find utility
-            #Moved the utility call into minimax since leaf nodes utility and non leaf nodes use other min/max vals
-            return self.utility(node.gameState)
-        # My move
-        if whoseTurn == self.playerId:
+            print(f"Move with node: {node.move}")
+            # Base case: if it is a leaf node then find utility
+            if node.evaluation is None:
+                node.evaluation = self.utility(node.gameState)
+            return node.evaluation
+
+        # Recurrsive Case 1: My move
+        if node.gameState.whoseTurn == self.playerId:
             best_eval = -math.inf
             for child in self.expandNode(node):
-                eval = self.minimax(child, 1 - whoseTurn)
+                eval = self.minimax(child)
                 best_eval = max(best_eval, eval)
             return best_eval
 
-        # Opponents move
+        # Recurrsive Case 2: Opponents move
         else:
             best_eval = math.inf
             for child in self.expandNode(node):
-                eval = self.minimax(child, 1 - whoseTurn)
+                eval = self.minimax(child)
                 best_eval = min(best_eval, eval)
             return best_eval
     
