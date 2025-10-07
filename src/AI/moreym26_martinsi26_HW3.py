@@ -95,7 +95,7 @@ class AIPlayer(Player):
         best_score = -math.inf
         move_choice = None
         for node in self.expandNode(rootNode):
-            score = self.minimax(node)
+            score = self.minimax(node, -math.inf, math.inf)
             if score > best_score:
                 best_score = score
                 move_choice = node.move
@@ -112,7 +112,7 @@ class AIPlayer(Player):
     #
     #Return: The mini-max evaluation of the move
     ##
-    def minimax(self, node):
+    def minimax(self, node, alpha, beta):
         DEPTH_LIMIT = 3
 
         if node.depth == DEPTH_LIMIT or getWinner(node.gameState) is not None:
@@ -125,19 +125,24 @@ class AIPlayer(Player):
         if node.gameState.whoseTurn == self.playerId:
             best_eval = -math.inf
             for child in self.expandNode(node):
-                eval = self.minimax(child)
+                eval = self.minimax(child, alpha, beta)
                 best_eval = max(best_eval, eval)
+                alpha = max(alpha, best_eval)
+                if beta <= alpha:
+                    break
             return best_eval
 
         # Recurrsive Case 2: Opponents move
         else:
             best_eval = math.inf
             for child in self.expandNode(node):
-                eval = self.minimax(child)
+                eval = self.minimax(child, alpha, beta)
                 best_eval = min(best_eval, eval)
+                beta = min (beta, best_eval)
+                if beta <= alpha:
+                    break
             return best_eval
     
-
     ##
     # expandNode
     # Description: Expands a node to generate all possible child nodes based on legal moves.
