@@ -162,9 +162,9 @@ class AIPlayer(Player):
     
     def utility(self, currentState):
         #combined heuristic, lower is better
-        return -(self.foodHeuristic(currentState) + self.geh_h_attack(currentState) + self.queenHeuristic(currentState))
+        return -(self.foodHeuristic(currentState) + self.attackHeuristic(currentState) + self.queenHeuristic(currentState))
     
-    def foodHeuristic(self, parentState, currentState):
+    def foodHeuristic(self, currentState):
         #defining vars
         myId = currentState.whoseTurn
         myInv = currentState.inventories[myId]
@@ -198,7 +198,7 @@ class AIPlayer(Player):
         
         return  totMoves
     
-    def attackHeuristic(self, parentState, currentState):
+    def attackHeuristic(self, currentState):
         myId = currentState.whoseTurn
         enemyId = 1 - myId
         myAnts = getAntList(currentState, myId)
@@ -217,7 +217,7 @@ class AIPlayer(Player):
         return moves
     
     # Check whethere the Queen is blocking the anthill
-    def queenHeuristic(self, parentState, currentState):
+    def queenHeuristic(self, currentState):
         myId = currentState.whoseTurn
         myAnthill = getConstrList(currentState, myId, (ANTHILL,))[0]
         myTunnel = getConstrList(currentState, myId, (TUNNEL,))[0]
