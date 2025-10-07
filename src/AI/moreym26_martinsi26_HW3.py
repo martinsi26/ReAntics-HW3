@@ -124,7 +124,7 @@ class AIPlayer(Player):
                 node.evaluation = self.utility(node.gameState)
             return node.evaluation
 
-        # Recurrsive Case 1: My move
+        # Recursive Case 1: My move
         if node.gameState.whoseTurn == self.playerId:
             best_eval = -math.inf
             for child in self.expandNode(node):
@@ -132,7 +132,7 @@ class AIPlayer(Player):
                 best_eval = max(best_eval, eval)
             return best_eval
 
-        # Recurrsive Case 2: Opponents move
+        # Recursive Case 2: Opponents move
         else:
             best_eval = math.inf
             for child in self.expandNode(node):
@@ -162,10 +162,27 @@ class AIPlayer(Player):
         
         return nodeList
     
+    ##
+    # utility
+    # Description: Combines all the other heuristic functions
+    #
+    # Parameters:
+    #   currentState - The state of the current game waiting for the player's move (GameState)
+    #
+    # Return: full heuristic value
+    ##
     def utility(self, currentState):
         #combined heuristic, lower is better
         return -(self.foodHeuristic(currentState) + self.attackHeuristic(currentState) + self.queenHeuristic(currentState))
-    
+    ##
+    # foodHeuristic
+    # Description: gets the heuristic value for food
+    #
+    # Parameters:
+    #   currentState - The state of the current game waiting for the player's move (GameState)
+    #
+    # Return: heuristic value for food
+    ##
     def foodHeuristic(self, currentState):
         #defining vars
         myId = currentState.whoseTurn
@@ -200,6 +217,15 @@ class AIPlayer(Player):
         
         return  totMoves
     
+    ##
+    # attackHeuristic
+    # Description: gets the heuristic value for attacking
+    #
+    # Parameters:
+    #   currentState - The state of the current game waiting for the player's move (GameState)
+    #
+    # Return: heuristic value for attacking
+    ##
     def attackHeuristic(self, currentState):
         myId = currentState.whoseTurn
         enemyId = 1 - myId
@@ -218,7 +244,15 @@ class AIPlayer(Player):
         
         return moves
     
-    # Check whethere the Queen is blocking the anthill
+    ##
+    # queenHeuristic
+    # Description: gets the heuristic value for the queen and what shes doing
+    #
+    # Parameters:
+    #   currentState - The state of the current game waiting for the player's move (GameState)
+    #
+    # Return: heuristic value for the queen
+    ##
     def queenHeuristic(self, currentState):
         myId = currentState.whoseTurn
         myAnthill = getConstrList(currentState, myId, (ANTHILL,))[0]
@@ -239,7 +273,7 @@ class AIPlayer(Player):
     # This agent never attacks
     #
     def getAttack(self, currentState, attackingAnt, enemyLocations):
-        return enemyLocations[0]  #don't care
+        return enemyLocations[0]  
         
     ##
     #registerWin
@@ -249,7 +283,7 @@ class AIPlayer(Player):
     def registerWin(self, hasWon):
         #method template, not implemented
         pass
-    
+    #Node class definition
 class Node:
     def __init__(self, move, gameState, depth, evaluation, parent):
         self.move = move
