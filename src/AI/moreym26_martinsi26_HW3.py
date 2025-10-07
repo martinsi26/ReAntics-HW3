@@ -151,15 +151,63 @@ class AIPlayer(Player):
     def expandNode(self, node):
         moves = listAllLegalMoves(node.gameState)
         #print("Legal moves at depth", node.depth, ":", moves)
-
         nodeList = []
-
+        #Loop through the node to expand the frontier node chosen
         for move in moves:
             gameState = getNextStateAdversarial(node.gameState, move)
             childNode = Node(move, gameState, node.depth+1, None, node)
             nodeList.append(childNode)
         
         return nodeList
+    
+    def utility(self, currentState):
+        #combined heuristic, lower is better
+        return -(self.foodHeuristic(currentState) + self.geh_h_attack(currentState) + self.get_h_queen(currentState))
+    
+    def foodHeuristic(self, parentState, currentState):
+        #defining vars
+        myId = currentState.whoseTurn
+        myInv = currentState.inventories[myId]
+        workerList = getAntList(currentState, myId, (WORKER,))
+        myTunnel = getConstrList(currentState, myId, (TUNNEL,))[0]
+
+        foodNeeded = FOOD_GOAL - myInv.foodCount
+        if foodNeeded <= 0:
+            return 0
+        
+        foods = getConstrList(currentState, None, (FOOD,))
+        food1, food2 = [f for f in foods if f.coords[1] <= 3][:2]
+
+        totMoves = 0
+
+        if workerList != []:
+            totMoves -= 1000
+            for worker in workerList:
+                if (worker.carrying):
+                    dist = approxDist(worker.coords, myTunnel.coords)
+                    totMoves += self.dist_to_moves(dist, WORKER)
+                    foodNeeded -= 1 # each worker will deliver the food
+
+                else:
+                    dist_to_food_1 = approxDist(worker.coords, food1.coords)
+                    dist_to_food_2 = approxDist(worker.coords, food2.coords)
+
+                    if dist_to_food_1 < dist_to_food_2:
+                        dist = dist_to_food_1
+                        dist += approxDist(food1.coords, myTunnel.coords)
+                    else:
+                        dist = dist_to_food_2
+                        dist += approxDist(food2.coords, myTunnel.coords)
+                    totMoves += self.dist_to_moves(dist, WORKER)
+                    foodNeeded -= 1 # each worker will deliver the food
+        
+        dist_between_tunnel_food = min (approxDist(food1.coords, myTunnel.coords), approxDist(food2.coords, myTunnel.coords))
+        totMoves += 2 * foodNeeded * self.dist_to_moves(dist_between_tunnel_food, WORKER)
+            
+        return  totMoves
+    
+    
+    
     
     ##
     #getAttack
@@ -216,20 +264,8 @@ class AIPlayer(Player):
 
         return best_node
 
-    def expandNode(self, currentNode):
-        #Get all valid moves
-        currentState = currentNode['currentState']
-        moves = listAllLegalMoves(currentState)
-
-        expanded_nodes = []
-        for move in moves:
-            next_node = self.createNode(move, currentNode, getNextState(currentState, move))
-            expanded_nodes.append(next_node)
-
-        return expanded_nodes
-
     def h_func(self, parentState, currentState):
-        h_food = self.get_h_food(parentState, currentState)
+        h_food = self.foodHeuristic(parentState, currentState)
         
         h_attack = self.get_h_attack(parentState, currentState)
 
@@ -239,56 +275,6 @@ class AIPlayer(Player):
 
         return h_final
 
-    def get_h_food(self, parentState, currentState):
-        myId = currentState.whoseTurn
-        myInv = currentState.inventories[myId]
-
-        workerList = getAntList(currentState, myId, (WORKER,))
-        myTunnel = getConstrList(currentState, myId, (TUNNEL,))[0]
-        myAnthill = getConstrList(currentState, myId, (ANTHILL,))[0]
-
-        myFood = None
-
-        Food_needed = FOOD_GOAL - myInv.foodCount
-        if Food_needed == 0:
-            return 0
-        
-        Foods = getConstrList(currentState, None, (FOOD,))
-        myFood_1, myFood_2 = None, None
-        for food in Foods:
-            if food.coords[1] <= 3:
-                if myFood_1 == None:
-                    myFood_1 = food
-                else:
-                    myFood_2 = food
-
-        total_moves = 1000
-
-        if workerList != []:
-            total_moves -= 1000
-            for worker in workerList:
-                if (worker.carrying):
-                    dist = approxDist(worker.coords, myTunnel.coords)
-                    total_moves += self.dist_to_moves(dist, WORKER)
-                    Food_needed -= 1 # each worker will deliver the food
-
-                else:
-                    dist_to_food_1 = approxDist(worker.coords, myFood_1.coords)
-                    dist_to_food_2 = approxDist(worker.coords, myFood_2.coords)
-
-                    if dist_to_food_1 < dist_to_food_2:
-                        dist = dist_to_food_1
-                        dist += approxDist(myFood_1.coords, myTunnel.coords)
-                    else:
-                        dist = dist_to_food_2
-                        dist += approxDist(myFood_2.coords, myTunnel.coords)
-                    total_moves += self.dist_to_moves(dist, WORKER)
-                    Food_needed -= 1 # each worker will deliver the food
-        
-        dist_between_tunnel_food = min (approxDist(myFood_1.coords, myTunnel.coords), approxDist(myFood_2.coords, myTunnel.coords))
-        total_moves += 2 * Food_needed * self.dist_to_moves(dist_between_tunnel_food, WORKER)
-            
-        return  total_moves
 
     def get_h_attack(self, parentState, currentState):
         myId = currentState.whoseTurn
