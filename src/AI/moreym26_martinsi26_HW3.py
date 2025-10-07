@@ -160,151 +160,6 @@ class AIPlayer(Player):
             nodeList.append(childNode)
         
         return nodeList
-
-
-    ##
-    #utility
-    #Description: Calculates the evaluation score for a given game state.
-    #
-    #Parameters:
-    #   currentState - The state of the current game waiting for the player's move (GameState)
-    #   preCarrying - A boolean value to see if a worker was carrying food before the move
-    #
-    #Return: The evaluation value for the move
-    ##
-    def utility(self, currentState):
-        TARGET_WORKERS = 2
-        TARGET_ARMY = {R_SOLDIER: 1, SOLDIER: 1}
-
-        winner = getWinner(currentState)
-
-        # Game over scoring
-        if winner == PLAYER_ONE:
-            return math.inf
-        elif winner == PLAYER_TWO:
-            return -math.inf
-        
-        myInv = getCurrPlayerInventory(currentState)
-        enemyInv = getEnemyInv(self, currentState)
-
-        score = 0
-
-        # Queen HP
-        score += 10 * myInv.getQueen().health
-        score -= 10 * enemyInv.getQueen().health
-
-        # Anthill HP
-        score += 5 * myInv.getAnthill().captureHealth
-        score -= 5 * enemyInv.getAnthill().captureHealth
-
-        # Worker incentive
-        myWorkers = getAntList(currentState, currentState.whoseTurn, (WORKER,))
-        numWorkers = len(myWorkers)
-        if numWorkers < TARGET_WORKERS:
-            score += 5 * numWorkers
-        else:
-            score += 5 * TARGET_WORKERS
-
-        # Army incentive
-        for antType, targetCount in TARGET_ARMY.items():
-            myCount = sum(1 for ant in myInv.ants if ant.type == antType)
-            if myCount < targetCount:
-                score += 4 * myCount
-            else:
-                score += 4 * targetCount
-        
-        # Food incentive only if army target is met
-        if numWorkers >= TARGET_WORKERS and all(
-            sum(1 for ant in myInv.ants if ant.type == t) >= c 
-            for t, c in TARGET_ARMY.items()
-        ):
-            score += 10 * myInv.foodCount
-
-        # Penalize enemy army
-        enemyArmy = getAntList(currentState, 1 - currentState.whoseTurn, (WORKER, DRONE, SOLDIER, R_SOLDIER)) # All enemy ants but disregarding their queen
-        score -= 3 * len(enemyArmy)
-
-        # Ranged soldier movement incentive
-        myRSoldiers = [ant for ant in getAntList(currentState, currentState.whoseTurn, (R_SOLDIER,))]
-        score += self.rangedSoldierUtility(myRSoldiers, enemyArmy)
-
-        # Worker movement incentive
-        myWorkers = getAntList(currentState, currentState.whoseTurn, (WORKER,))
-        score += self.workerUtility(myWorkers, currentState)
-
-        return score
-
-
-    ##
-    #rangedSoldierUtility
-    #Description: Calculates the evaluation score for ranged soldier movement
-    #
-    #Parameters:
-    #   myRanged - A list of ranged soldier ants
-    #   enemyAnts - A list of enemy ants
-    #
-    #Return: The evaluation value for ranged soldier movement
-    ##
-    def rangedSoldierUtility(self, myRanged, enemyAnts):
-        score = 0
-        for rsoldier in myRanged:
-            if enemyAnts:
-                closestDist = min(approxDist(rsoldier.coords, e.coords) for e in enemyAnts)
-                # Closer distance gives higher score
-                score += 5 / (closestDist + 1)  
-            
-        return score
-    
-
-    ##
-    #workerUtility
-    #Description: Calculates the evaluation score for worker movement
-    #
-    #Parameters:
-    #   myRanged - A list of worker ants
-    #   currentState - The state of the current game waiting for the player's move (GameState)
-    #
-    #Return: The evaluation value for worker movement
-    ##
-    def workerUtility(self, myWorkers, currentState):
-        score = 0
-        myInv = getCurrPlayerInventory(currentState)
-        
-        # Get food on the board
-        foodList = getConstrList(currentState, pid=None, types=(FOOD,))
-        
-        # Get home locations (Anthill + Tunnels)
-        homeList = [myInv.getAnthill()] + myInv.getTunnels()
-        #Get ants
-        ants = getAntList(currentState, currentState.whoseTurn)
-
-        for worker in myWorkers:
-            if worker.carrying:
-                # Worker has food: move towards closest home (anthill/tunnel)
-                homesByDistance = sorted(homeList, key=lambda h: approxDist(worker.coords, h.coords))
-                # Closer distance is better, invert distance
-                for home in homesByDistance:
-                    occupied = any(a.coords == home.coords and a is not worker for a in ants)
-                    if not occupied:
-                        closestHomeDist = approxDist(worker.coords, home.coords)
-                        score += 20 / (closestHomeDist + 1)
-                        score += 10  # bonus for carrying food
-                        if worker.coords in [home.coords for home in homeList]:
-                            score += 20  # Encourage dropping food
-                        if closestHomeDist > 5:
-                            score -= 5
-                        break
-            else:
-                # Worker not carrying: move towards closest food
-                if foodList:
-                    closestFoodDist = min(approxDist(worker.coords, food.coords) for food in foodList)
-                    score += 10 / (closestFoodDist + 1) 
-
-        # Reward for delivered food
-        score += 10 * myInv.foodCount
-        
-        return score
-  
     
     ##
     #getAttack
@@ -322,6 +177,189 @@ class AIPlayer(Player):
     def registerWin(self, hasWon):
         #method template, not implemented
         pass
+    def dist_to_moves (self, dist, ant_type):
+        return math.ceil (dist / UNIT_STATS[ant_type][MOVEMENT])
+    
+    def select_from_frontierNodes(self, frontierNodes, max_depth):
+        min_f_value = 10000000
+        selected_node = None
+
+        for node in frontierNodes:
+            if node['depth'] < max_depth and node['f_value'] < min_f_value:
+                selected_node = node
+
+        if selected_node == None:
+            return None
+        
+        return selected_node
+
+    def findBestNode(self, nodes):
+        #intialize vars
+        best_node = nodes[0]
+        min_value = best_node['f_value']
+        #Get best utility
+        for node in nodes:
+            if (node['f_value'] < min_value):
+                min_value = node['f_value']
+                best_node = node  
+
+        best_nodes = []
+        for node in nodes:
+            if node['f_value'] == min_value:
+                best_nodes.append(node)
+
+        best_node = best_nodes[random.randint(0,len(best_nodes) - 1)]
+
+        # Find the best movement -> from the current depth to the first depth !!! 
+        while best_node['depth'] > 2:
+            best_node = best_node['parentNode']
+
+        return best_node
+
+    def expandNode(self, currentNode):
+        #Get all valid moves
+        currentState = currentNode['currentState']
+        moves = listAllLegalMoves(currentState)
+
+        expanded_nodes = []
+        for move in moves:
+            next_node = self.createNode(move, currentNode, getNextState(currentState, move))
+            expanded_nodes.append(next_node)
+
+        return expanded_nodes
+
+    def h_func(self, parentState, currentState):
+        h_food = self.get_h_food(parentState, currentState)
+        
+        h_attack = self.get_h_attack(parentState, currentState)
+
+        h_queen = self.get_h_queen(parentState, currentState)
+        #Add all together
+        h_final = h_food + h_attack + h_queen
+
+        return h_final
+
+    def get_h_food(self, parentState, currentState):
+        myId = currentState.whoseTurn
+        myInv = currentState.inventories[myId]
+
+        workerList = getAntList(currentState, myId, (WORKER,))
+        myTunnel = getConstrList(currentState, myId, (TUNNEL,))[0]
+        myAnthill = getConstrList(currentState, myId, (ANTHILL,))[0]
+
+        myFood = None
+
+        Food_needed = FOOD_GOAL - myInv.foodCount
+        if Food_needed == 0:
+            return 0
+        
+        Foods = getConstrList(currentState, None, (FOOD,))
+        myFood_1, myFood_2 = None, None
+        for food in Foods:
+            if food.coords[1] <= 3:
+                if myFood_1 == None:
+                    myFood_1 = food
+                else:
+                    myFood_2 = food
+
+        total_moves = 1000
+
+        if workerList != []:
+            total_moves -= 1000
+            for worker in workerList:
+                if (worker.carrying):
+                    dist = approxDist(worker.coords, myTunnel.coords)
+                    total_moves += self.dist_to_moves(dist, WORKER)
+                    Food_needed -= 1 # each worker will deliver the food
+
+                else:
+                    dist_to_food_1 = approxDist(worker.coords, myFood_1.coords)
+                    dist_to_food_2 = approxDist(worker.coords, myFood_2.coords)
+
+                    if dist_to_food_1 < dist_to_food_2:
+                        dist = dist_to_food_1
+                        dist += approxDist(myFood_1.coords, myTunnel.coords)
+                    else:
+                        dist = dist_to_food_2
+                        dist += approxDist(myFood_2.coords, myTunnel.coords)
+                    total_moves += self.dist_to_moves(dist, WORKER)
+                    Food_needed -= 1 # each worker will deliver the food
+        
+        dist_between_tunnel_food = min (approxDist(myFood_1.coords, myTunnel.coords), approxDist(myFood_2.coords, myTunnel.coords))
+        total_moves += 2 * Food_needed * self.dist_to_moves(dist_between_tunnel_food, WORKER)
+            
+        return  total_moves
+
+    def get_h_attack(self, parentState, currentState):
+        myId = currentState.whoseTurn
+        myInv = currentState.inventories[myId]
+
+        enemyId = 1 - myId
+        enemyInv = currentState.inventories[enemyId]
+
+        myAntList = getAntList(currentState, myId)
+        enemyTunnel = getConstrList(currentState, enemyId, (TUNNEL,))[0]
+
+        # If enemy queen is killed
+        if getAntList(currentState, enemyId, (QUEEN,)) == []:
+            return 0
+        
+        Total_moves = 2100
+        num_r_soldier = 0
+        num_soldier = 0
+
+        for ant in myAntList:
+            if ant.type == R_SOLDIER:
+                num_r_soldier += 1
+            if ant.type == SOLDIER:
+                num_soldier += 1
+
+        if num_r_soldier != 0:
+            Total_moves = max (0, Total_moves - 500 * num_r_soldier)
+
+        enemyQueen = getAntList(currentState, enemyId, (QUEEN,))[0]
+        enemyWorkers = getAntList(currentState, enemyId, (WORKER,))
+        if enemyWorkers == []:
+            Total_moves -= 100
+
+        for ant in myAntList:
+            if ant.type == R_SOLDIER:
+                if enemyWorkers == []:
+                    dist_to_target = approxDist(ant.coords, enemyQueen.coords)
+                else:
+                    dist_to_target = approxDist(ant.coords, enemyWorkers[0].coords)
+
+                moves_to_target = self.dist_to_moves (dist_to_target, R_SOLDIER)
+                Total_moves += moves_to_target
+
+        return Total_moves
+    
+    # Check whethere the Queen is blocking the anthill
+    def get_h_queen(self, parentState, currentState):
+        myId = currentState.whoseTurn
+        myAnthill = getConstrList(currentState, myId, (ANTHILL,))[0]
+        myTunnel = getConstrList(currentState, myId, (TUNNEL,))[0]
+        myQueen = getAntList(currentState, myId, (QUEEN,))[0]
+
+        Foods = getConstrList(currentState, None, (FOOD,))
+        myFood_1, myFood_2 = None, None
+        for food in Foods:
+            if food.coords[1] <= 3:
+                if myFood_1 == None:
+                    myFood_1 = food
+                else:
+                    myFood_2 = food
+
+        Total_moves = 2
+        if  (myQueen.coords != myAnthill.coords) and (myQueen.coords != myTunnel.coords):
+            Total_moves -= 1
+        elif (myQueen.coords != myFood_1.coords) and (myQueen.coords != myFood_2.coords):
+            Total_moves -= 1
+
+        dist_to_destination = approxDist(myQueen.coords, (1,2))
+        Total_moves += self.dist_to_moves (dist_to_destination, QUEEN)
+        
+        return Total_moves
 
 class Node:
     def __init__(self, move, gameState, depth, evaluation, parent):
