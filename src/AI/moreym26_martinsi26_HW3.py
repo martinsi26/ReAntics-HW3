@@ -136,7 +136,6 @@ class AIPlayer(Player):
                 if beta <= alpha:
                     # Beta cutoff
                     break
-            # For debugging tree exploration
             return best_eval
 
         # Recurrsive Case 2: Opponents move
@@ -150,7 +149,6 @@ class AIPlayer(Player):
                 if beta <= alpha:
                     # Alpha cutoff
                     break
-            # For debugging tree exploration
             return best_eval
     
     ##
