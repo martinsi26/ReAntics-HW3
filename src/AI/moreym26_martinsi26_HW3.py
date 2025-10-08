@@ -91,11 +91,11 @@ class AIPlayer(Player):
     #Return: The Move to be made
     ##
     def getMove(self, currentState):
-        rootNode = Node(None, currentState, 0, self.utility(currentState, currentState), None)
+        rootNode = Node(None, currentState, 0, self.utility(currentState, currentState, currentState.whoseTurn), None)
         best_score = -math.inf
         move_choice = None
-        for node in self.expandNode(rootNode):
-            score = self.minimax(node, -math.inf, math.inf)
+        for node in self.expandNode(rootNode, currentState.whoseTurn):
+            score = self.minimax(node, -math.inf, math.inf, currentState.whoseTurn)
             if score > best_score:
                 best_score = score
                 move_choice = node.move
@@ -112,35 +112,45 @@ class AIPlayer(Player):
     #
     #Return: The mini-max evaluation of the move
     ##
-    def minimax(self, node, alpha, beta):
+    def minimax(self, node, alpha, beta, myTurn):
         DEPTH_LIMIT = 3
 
-        if node.depth == DEPTH_LIMIT or getWinner(node.gameState) is not None:
-            print(f"Random node eval: {node.evaluation}")
-            print(f"Move with node: {node.move}")
+        if getWinner(node.gameState) is not None or node.depth >= DEPTH_LIMIT:
             # Base case: if it is a leaf node then find utility
             return node.evaluation
 
+        isMyTurn = (node.gameState.whoseTurn == myTurn)
+
+        children = self.expandNode(node, myTurn)
+        if not children:
+            return node.evaluation
+
         # Recurrsive Case 1: My move
-        if node.gameState.whoseTurn == self.playerId:
+        if isMyTurn:
             best_eval = -math.inf
-            for child in self.expandNode(node):
-                eval = self.minimax(child, alpha, beta)
-                best_eval = max(best_eval, eval)
+
+            for child in children:
+                eval = self.minimax(child, alpha, beta, myTurn)
+                best_eval = max(eval, best_eval)
                 alpha = max(alpha, best_eval)
                 if beta <= alpha:
+                    # Beta cutoff
                     break
+            # For debugging tree exploration
             return best_eval
 
         # Recurrsive Case 2: Opponents move
         else:
             best_eval = math.inf
-            for child in self.expandNode(node):
-                eval = self.minimax(child, alpha, beta)
+
+            for child in children:
+                eval = self.minimax(child, alpha, beta, myTurn)
                 best_eval = min(best_eval, eval)
-                beta = min (beta, best_eval)
+                beta = min(beta, best_eval)
                 if beta <= alpha:
+                    # Alpha cutoff
                     break
+            # For debugging tree exploration
             return best_eval
     
     ##
@@ -152,18 +162,21 @@ class AIPlayer(Player):
     #
     # Return: A list of child nodes generated from the current node
     ##
-    def expandNode(self, node):
+    def expandNode(self, node, myTurn):
         moves = listAllLegalMoves(node.gameState)
-        #print("Legal moves at depth", node.depth, ":", moves)
-
         nodeList = []
 
         for move in moves:
             gameState = getNextStateAdversarial(node.gameState, move)
-            childNode = Node(move, gameState, node.depth+1, self.utility(gameState, node.gameState), node)
+            childNode = Node(move, gameState, node.depth+1, self.utility(gameState, node.gameState, myTurn), node)
             nodeList.append(childNode)
+
+        nodeList.sort(key=lambda n: n.evaluation, reverse=(node.gameState.whoseTurn == myTurn))
+
+        topPercent = 0.05
+        cutoff = max(1, int(len(nodeList) * topPercent))
         
-        return nodeList
+        return nodeList[:cutoff]
 
 
     ##
@@ -176,26 +189,26 @@ class AIPlayer(Player):
     #
     #Return: The evaluation value for the move
     ##
-    def utility(self, currentState, previousState):
+    def utility(self, currentState, previousState, myTurn):
         TARGET_WORKERS = 2
-        TARGET_ARMY = {R_SOLDIER: 1, SOLDIER: 1}
+        TARGET_R_SOLDIER = 1
 
         winner = getWinner(currentState)
 
+        score = 0
+
         # Game over scoring
-        if winner == 1:
-            return math.inf
-        elif winner == 0:
-            return -math.inf
+        if winner == myTurn:
+            score += -math.inf
+        elif winner == 1 - myTurn:
+            score += math.inf
         
-        if currentState.whoseTurn == 1:
+        if currentState.whoseTurn == myTurn:
             myInv = getCurrPlayerInventory(currentState)
             enemyInv = getEnemyInv(self, currentState)
         else:
             enemyInv = getCurrPlayerInventory(currentState)
             myInv = getEnemyInv(self, currentState)
-
-        score = 0
 
         # Queen HP
         score += 10 * myInv.getQueen().health
@@ -212,39 +225,30 @@ class AIPlayer(Player):
         score -= 5 * enemyInv.getAnthill().captureHealth
 
         # Worker incentive
-        myWorkers = getAntList(currentState, 1, (WORKER,))
+        myWorkers = getAntList(currentState, myTurn, (WORKER,))
         numWorkers = len(myWorkers)
-        if numWorkers < TARGET_WORKERS:
+        if numWorkers <= TARGET_WORKERS:
             score += 5 * numWorkers
-        else:
-            score += 5 * TARGET_WORKERS
 
         # Army incentive
-        for antType, targetCount in TARGET_ARMY.items():
-            myCount = sum(1 for ant in myInv.ants if ant.type == antType)
-            if myCount < targetCount:
-                score += 4 * myCount
-            else:
-                score += 4 * targetCount
+        myRSoldiers = getAntList(currentState, myTurn, (R_SOLDIER,))
+        numRSoldiers = len(myRSoldiers)
+        if numRSoldiers <= TARGET_R_SOLDIER:
+            score += 5 * numRSoldiers
         
         # Food incentive only if army target is met
-        if numWorkers >= TARGET_WORKERS and all(
-            sum(1 for ant in myInv.ants if ant.type == t) >= c 
-            for t, c in TARGET_ARMY.items()
-        ):
+        if numWorkers >= TARGET_WORKERS and numRSoldiers >= TARGET_R_SOLDIER:
             score += 10 * myInv.foodCount
 
         # Penalize enemy army
-        enemyArmy = getAntList(currentState, 0, (WORKER, DRONE, SOLDIER, R_SOLDIER)) # All enemy ants but disregarding their queen
+        enemyArmy = getAntList(currentState, 1 - myTurn, (WORKER, DRONE, SOLDIER, R_SOLDIER)) # All enemy ants but disregarding their queen
         score -= 3 * len(enemyArmy)
 
         # Ranged soldier movement incentive
-        myRSoldiers = [ant for ant in getAntList(currentState, 1, (R_SOLDIER,))]
         score += self.rangedSoldierUtility(myRSoldiers, enemyArmy)
 
         # Worker movement incentive
-        myWorkers = getAntList(currentState, 1, (WORKER,))
-        previousWorkers = getAntList(previousState, 1, (WORKER,))
+        previousWorkers = getAntList(previousState, myTurn, (WORKER,))
         score += self.workerUtility(myWorkers, previousWorkers, currentState, myInv)
 
         return score
@@ -264,11 +268,20 @@ class AIPlayer(Player):
         score = 0
         for rsoldier in myRanged:
             if enemyAnts:
-                closestDist = min(approxDist(rsoldier.coords, e.coords) for e in enemyAnts)
-                # Closer distance gives higher score
-                score += 5 / (closestDist + 1)  
-            
+                # Calculate the Manhattan distance separately for x and y
+                distances = [
+                    (abs(rsoldier.coords[0] - e.coords[0]), abs(rsoldier.coords[1] - e.coords[1]))
+                    for e in enemyAnts
+                ]
+                # Find closest enemy based on Manhattan distance
+                closestX, closestY = min(distances, key=lambda d: d[0] + d[1])
+                
+                # Prioritize y-direction slightly more
+                weightedDist = closestX + 1.2 * closestY  # increase weight on y
+                score += 5 / (weightedDist + 1)
+        
         return score
+
     
 
     ##
@@ -294,85 +307,27 @@ class AIPlayer(Player):
             for prevWorker in previousWorkers:
                 if prevWorker.UniqueID != worker.UniqueID:
                     continue
+                
+                closestHomeDist = min(stepsToReach(currentState, worker.coords, home.coords) for home in homeList)
+                closestFoodDist = min(stepsToReach(currentState, worker.coords, food.coords) for food in foodList)
 
-                if worker.carrying or (not worker.carrying and prevWorker.carrying):
-                    # Worker has food: move towards closest home (anthill/tunnel)
-                    closestHomeDist = min(approxDist(worker.coords, home.coords) for home in homeList)
-                    # Closer distance is better, invert distance
+                # Worker just picked up food
+                if worker.carrying and not prevWorker.carrying and closestFoodDist == 0:
+                    score += 12
+                
+                # Worker just dropped food off
+                elif not worker.carrying and prevWorker.carrying and closestHomeDist == 0:
+                    score += 12
+
+                # Move worker towards Home
+                elif worker.carrying:
                     score += 10 / (closestHomeDist + 1)
-                elif not worker.carrying or (worker.carrying and not prevWorker.carrying):
-                    # Worker not carrying: move towards closest food
-                    if foodList:
-                        closestFoodDist = min(approxDist(worker.coords, food.coords) for food in foodList)
-                        score += 5 / (closestFoodDist + 1) 
+
+                # Move worker towards Food
+                elif not worker.carrying:
+                    score += 10 / (closestFoodDist + 1) 
         
         return score
-
-
-
-    # ##
-    # #utility
-    # #Description: Calculates the evaluation score for a given game state.
-    # #
-    # #Parameters:
-    # #   currentState - The state of the current game waiting for the player's move (GameState)
-    # #   preCarrying - A boolean value to see if a worker was carrying food before the move
-    # #
-    # #Return: The evaluation value for the move
-    # ##
-    # def utility(self, currentState, preCarrying):
-    #     myWorkers = getAntList(currentState, currentState.whoseTurn, (WORKER,))
-    #     foods = getConstrList(currentState, None, (FOOD,))
-    #     homeSpots = getConstrList(currentState, currentState.whoseTurn, (TUNNEL, ANTHILL))
-    #     myInv = getCurrPlayerInventory(currentState)
-    #     evaluation = 0.5 # neutral base score
-
-    #     # Winning condition
-    #     if myInv.foodCount >= 11:
-    #         return 1.0  # goal reached
-        
-    #     # ----- Food progress (0.0 - 0.4) -------
-    #     food_score = myInv.foodCount/11
-    #     evaluation += food_score * 0.4 #scale down
-        
-    #     # ------- worker management -------
-    #     numWorkers = len(myWorkers)
-    #     if numWorkers == 0:
-    #         evaluation -= 0.3   # heavy penalty for no workers
-    #     elif numWorkers > 2:
-    #         evaluation -= 0.05 * (numWorkers - 2) # penalty for too may
-    #     else:
-    #         evaluation += 0.05  # small reward for 1-2 workers
-
-    #     # ----- Worker movement / pickup / delivery -----
-    #     if myWorkers and foods and homeSpots:            
-    #         worker_efficiency = 0.0
-            
-    #         for worker in myWorkers:
-    #             workerID = worker.UniqueID
-    #             wasCarrying = preCarrying.get(workerID, False)
-
-    #             # Pickup / delivery incentive
-    #             if not wasCarrying and worker.carrying:  # just picked up food
-    #                 worker_efficiency += 0.08
-    #             elif wasCarrying and not worker.carrying:  # just delivered food
-    #                 worker_efficiency += 0.12
-    #             else:
-    #                 # Reward moving toward target
-    #                 if not worker.carrying:  # heading to food
-    #                     closestFood = min(foods, key=lambda f: stepsToReach(currentState, worker.coords, f.coords))
-    #                     dist = stepsToReach(currentState, worker.coords, closestFood.coords)
-    #                     worker_efficiency += max(0, (10 - dist) / 10 * 0.03)
-    #                 else:  # heading to home
-    #                     closestHome = min(homeSpots, key=lambda f: stepsToReach(currentState, worker.coords, f.coords))
-    #                     dist = stepsToReach(currentState, worker.coords, closestHome.coords)
-    #                     worker_efficiency += max(0, (10 - dist) / 10 * 0.05)
-    #         # average efficiency
-    #         if numWorkers > 0:
-    #             evaluation += min(0.2, worker_efficiency / numWorkers * 0.2)
-        
-    #     return max(0.0, min(1.0, evaluation))
-          
     
     ##
     #getAttack
