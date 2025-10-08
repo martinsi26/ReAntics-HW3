@@ -209,8 +209,10 @@ class AIPlayer(Player):
             myInv = getEnemyInv(self, currentState)
 
         # Queen HP
-        score += 10 * myInv.getQueen().health
-        score -= 10 * enemyInv.getQueen().health
+        if myInv.getQueen() is not None:
+            score += 10 * myInv.getQueen().health
+        if enemyInv.getQueen() is not None:
+            score -= 10 * enemyInv.getQueen().health
 
         # Queen off Anthill
         if myInv.getQueen().coords == myInv.getAnthill().coords:
